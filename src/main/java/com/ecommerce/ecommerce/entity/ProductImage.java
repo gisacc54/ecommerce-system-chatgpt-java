@@ -74,4 +74,6 @@ public class ProductImage {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+
 }

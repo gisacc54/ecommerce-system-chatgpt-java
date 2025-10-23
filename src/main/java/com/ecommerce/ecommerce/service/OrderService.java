@@ -1,16 +1,21 @@
 package com.ecommerce.ecommerce.service;
 
+import com.ecommerce.ecommerce.dto.*;
 import com.ecommerce.ecommerce.dto.CancelOrderResponse;
-import com.ecommerce.ecommerce.dto.PlaceOrderRequest;
-import com.ecommerce.ecommerce.dto.PlaceOrderResponse;
 import com.ecommerce.ecommerce.entity.*;
 import com.ecommerce.ecommerce.repository.*;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import jakarta.transaction.Transactional;
+import org.springframework.mail.MailException;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderService {
@@ -21,18 +26,20 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
+    private final JavaMailSender mailSender;
 
     public OrderService(CartRepository cartRepository,
                         ProductRepository productRepository,
                         OrderRepository orderRepository,
                         OrderItemRepository orderItemRepository,
-                        UserRepository userRepository, PaymentRepository paymentRepository) {
+                        UserRepository userRepository, PaymentRepository paymentRepository, JavaMailSender mailSender) {
         this.cartRepository = cartRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
+        this.mailSender = mailSender;
     }
 
     /**
@@ -142,5 +149,136 @@ public class OrderService {
         response.setRefundProcessed(refundProcessed);
 
         return response;
+    }
+    /**
+     * Fetch past orders for a given user ID.
+     */
+    public List<OrderHistoryResponse> getUserOrderHistory(Long userId) {
+        // 1️⃣ Check if the user exists
+        if (!userRepository.existsById(userId)) {
+            throw new IllegalArgumentException("User not found");
+        }
+
+        // 2️⃣ Retrieve all orders for the user
+        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+
+        // 3️⃣ Map entity list to DTOs for response
+        return orders.stream()
+                .map(order -> new OrderHistoryResponse(
+                        order.getId(),
+                        order.getStatusStr(),
+                        order.getTotalAmount(),
+                        order.getCreatedAt()
+                ))
+                .collect(Collectors.toList());
+    }
+
+
+    /**
+     * Sends order confirmation email for the given order id.
+     * Fetches order and items, constructs email, sends it and updates the order.confirmationSent flag.
+     *
+     * @param orderId id of the order to confirm
+     * @return OrderConfirmationResponse with status and timestamp
+     * @throws IllegalArgumentException if order not found
+     * @throws MailException or MessagingException on email sending errors
+     */
+    @Transactional
+    public OrderConfirmationResponse sendOrderConfirmationEmail(Long orderId) throws MessagingException {
+        // 1) Fetch order with items + user
+        Order order = orderRepository.findByIdWithItemsAndUser(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+
+        // 2) Map order items to DTOs
+        List<OrderItemDto> items = order.getOrderItems()
+                .stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+
+        // 3) Build email subject & body (simple HTML)
+        String subject = String.format("Order Confirmation — Order #%d", order.getId());
+        String body = buildEmailBody(order, items);
+
+        // 4) Get recipient email (from associated user)
+        User user = order.getUser();
+        if (user == null || user.getEmail() == null) {
+            throw new IllegalArgumentException("Order has no associated user email");
+        }
+        String to = user.getEmail();
+
+        // 5) Send email using JavaMailSender (MimeMessage with HTML)
+        try {
+            sendHtmlEmail(to, subject, body);
+        } catch (MailException | MessagingException e) {
+            // rethrow so controller can return 400, but we do NOT update confirmationSent on failure
+            throw e;
+        }
+
+        // 6) Update confirmationSent field and persist (transactional ensures commit)
+        order.setConfirmationSent(true);
+        order.setConfirmationSentAt(LocalDateTime.now()); // add this field to Order if available
+        orderRepository.save(order);
+
+        // 7) Build response DTO
+        return new OrderConfirmationResponse(
+                order.getId(),
+                order.getTotalAmount(),
+                order.getStatusStr(),
+                true,
+                "Confirmation email sent successfully",
+                order.getConfirmationSentAt()
+        );
+    }
+
+    private OrderItemDto mapToDto(OrderItem oi) {
+        return new OrderItemDto(
+                oi.getProduct().getName(), // or oi.getProduct().getName() depending on your model
+                oi.getQuantity(),
+                oi.getPrice()
+        );
+    }
+
+    private String buildEmailBody(Order order, List<OrderItemDto> items) {
+        // Simple HTML email body. You can use a templating engine (Thymeleaf) for complex templates.
+        StringBuilder sb = new StringBuilder();
+        sb.append("<h2>Asante — Order Confirmation (Thank you)</h2>");
+        sb.append("<p>Order ID: ").append(order.getId()).append("</p>");
+        sb.append("<p>Total: ").append(formatTzs(order.getTotalAmount())).append("</p>");
+        sb.append("<p>Shipping address: ").append(escapeNullable(order.getShippingAddress())).append("</p>");
+        sb.append("<h3>Items</h3>");
+        sb.append("<table style='width:100%; border-collapse: collapse;'>");
+        sb.append("<thead><tr><th style='border:1px solid #ddd; padding:8px'>Product</th><th style='border:1px solid #ddd; padding:8px'>Qty</th><th style='border:1px solid #ddd; padding:8px'>Price (TZS)</th></tr></thead>");
+        sb.append("<tbody>");
+        for (OrderItemDto it : items) {
+            sb.append("<tr>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px'>").append(it.productName()).append("</td>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:center'>").append(it.quantity()).append("</td>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:right'>").append(formatTzs(it.price())).append("</td>");
+            sb.append("</tr>");
+        }
+        sb.append("</tbody></table>");
+        sb.append("<p>Karibu tena! — Thank you for shopping with us.</p>");
+        return sb.toString();
+    }
+
+    private String formatTzs(BigDecimal amount) {
+        if (amount == null) return "0.00 TZS";
+        // Basic formatting — you can use NumberFormat for locale-specific formatting
+        return String.format("%,.2f TZS", amount);
+    }
+
+    private String escapeNullable(String s) {
+        return s == null ? "-" : s;
+    }
+
+    private void sendHtmlEmail(String to, String subject, String htmlBody) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, "UTF-8");
+        helper.setTo(to);
+        helper.setSubject(subject);
+        helper.setText(htmlBody, true); // true = HTML
+
+        // From address should be configured in application.properties (spring.mail.username)
+        mailSender.send(message);
     }
 }

@@ -1,17 +1,20 @@
 package com.ecommerce.ecommerce.controller;
 
-import com.ecommerce.ecommerce.dto.RegisterRequest;
-import com.ecommerce.ecommerce.dto.RegisterResponse;
-import com.ecommerce.ecommerce.dto.ShippingAddressRequest;
+import com.ecommerce.ecommerce.dto.*;
 import com.ecommerce.ecommerce.entity.User;
+import com.ecommerce.ecommerce.exception.UserNotFoundException;
 import com.ecommerce.ecommerce.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -154,7 +157,65 @@ public class UserController {
             );
         }
     }
+    /**
+     * GET /admin/users
+     * Fetch all registered users (admin only)
+     */
+    @GetMapping
+    public ResponseEntity<?> getAllUsers() {
+        // Check if authenticated user is admin
+        // ✅ Extract authenticated username (usually email)
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
+        if (authentication == null || authentication.getAuthorities()
+                .stream()
+                .noneMatch(a -> a.getAuthority().equals("admin"))) {
+            return ResponseEntity.status(403).body("Access denied: Admins only");
+        }
+
+        // Fetch all users
+        List<UserDto> users = userService.getAllUsers();
+        return ResponseEntity.ok(users);
+    }
+
+
+    // Error response DTO
+    static class ErrorResponse {
+        private String message;
+
+        public ErrorResponse(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
+
+    /**
+     * GET /users/role/{id} - Check a user's role
+     */
+    @GetMapping("/role/{id}")
+    public ResponseEntity<UserRoleDto> getUserRole(@PathVariable Long id) {
+        UserRoleDto dto = userService.getUserRole(id);
+        return ResponseEntity.ok(dto);
+    }
+
+    @PostMapping("/register/advanced")
+    public ResponseEntity<AdvancedUserRegistrationResponse> registerAdvanced(
+            @Valid @RequestBody AdvancedUserRegistrationRequest request) {
+
+        AdvancedUserRegistrationResponse response = userService.registerAdvanced(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Global exception handler for UserNotFoundException
+     */
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<String> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+    }
     // Simple response wrapper
     record ApiResponse(boolean success, String message, Long deletedUserId) {}
 }

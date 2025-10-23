@@ -1,10 +1,13 @@
 package com.ecommerce.ecommerce.controller;
 
+import com.ecommerce.ecommerce.dto.ProductDetailedResponse;
+import com.ecommerce.ecommerce.dto.ProductStockDto;
 import com.ecommerce.ecommerce.dto.UpdateProductRequest;
 import com.ecommerce.ecommerce.entity.Product;
 import com.ecommerce.ecommerce.entity.Review;
 import com.ecommerce.ecommerce.service.ProductService;
 import com.ecommerce.ecommerce.service.ReviewService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -183,7 +186,32 @@ public class ProductController {
         ));
     }
 
+    // GET /products/{id}/stock
+    @GetMapping("/{id}/stock")
+    public ResponseEntity<?> checkStock(@PathVariable("id") Long productId) {
+        try {
+            ProductStockDto stockDto = productService.checkStock(productId);
+            return ResponseEntity.ok(stockDto);
+        } catch (IllegalArgumentException e) {
+            // Return 404 if product not found
+            return ResponseEntity.status(404).body(
+                    new ErrorResponse("Product with ID " + productId + " not found")
+            );
+        }
+    }
 
+    // Error response DTO
+    static class ErrorResponse {
+        private String message;
+
+        public ErrorResponse(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
     // DTOs
 
 
@@ -266,5 +294,15 @@ public class ProductController {
         public void setProductId(Long productId) {
             this.productId = productId;
         }
+    }
+
+    @GetMapping("/{id}/detailed")
+    public ResponseEntity<ProductDetailedResponse> getProductDetailed(
+            @PathVariable Long id,
+            @RequestParam(required = false) Long userId,
+            HttpServletRequest request
+    ) {
+        ProductDetailedResponse response = productService.getProductDetailed(id, userId, request);
+        return ResponseEntity.ok(response);
     }
 }
