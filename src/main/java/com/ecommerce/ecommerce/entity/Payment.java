@@ -25,6 +25,10 @@ public class Payment {
     @Column
     private LocalDateTime paidAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Status status = Status.PENDING;
+
     @Column
     private LocalDateTime createdAt;
 
@@ -34,6 +38,23 @@ public class Payment {
     private boolean refunded;
 
     private LocalDateTime refundedAt;
+
+
+    // --- ENUM for Payment Status ---
+    public enum Status {
+        PENDING,
+        COMPLETED,
+        FAILED,
+        REFUNDED
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
+    }
 
     public LocalDateTime getRefundedAt() {
         return refundedAt;

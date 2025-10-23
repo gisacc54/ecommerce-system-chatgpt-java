@@ -1,9 +1,6 @@
 package com.ecommerce.ecommerce.controller;
 
-import com.ecommerce.ecommerce.dto.ApplyCouponRequest;
-import com.ecommerce.ecommerce.dto.ApplyCouponResponse;
-import com.ecommerce.ecommerce.dto.CreateCouponRequest;
-import com.ecommerce.ecommerce.dto.CreateCouponResponse;
+import com.ecommerce.ecommerce.dto.*;
 import com.ecommerce.ecommerce.service.CouponService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -50,4 +47,11 @@ public class CouponController {
         CreateCouponResponse response = couponService.createCoupon(request);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/apply/complex")
+    public ResponseEntity<CouponApplyResponse> applyCoupon(@RequestBody CouponApplyRequest request) {
+        CouponApplyResponse response = couponService.applyCoupon(request);
+        return ResponseEntity.ok(response);
+    }
+
 }

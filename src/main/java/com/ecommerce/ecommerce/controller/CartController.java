@@ -1,8 +1,6 @@
 package com.ecommerce.ecommerce.controller;
 
-import com.ecommerce.ecommerce.dto.AddToCartRequest;
-import com.ecommerce.ecommerce.dto.CartTotalResponse;
-import com.ecommerce.ecommerce.dto.EmptyCartResponse;
+import com.ecommerce.ecommerce.dto.*;
 import com.ecommerce.ecommerce.entity.User;
 import com.ecommerce.ecommerce.repository.UserRepository;
 import com.ecommerce.ecommerce.service.CartService;
@@ -95,5 +93,17 @@ public class CartController {
                 "Cart emptied successfully";
 
         return ResponseEntity.ok(new EmptyCartResponse(message, 0));
+    }
+
+    @PostMapping("/add/with-recs")
+    public ResponseEntity<CartAddResponseDto> addToCartWithRecs(@Valid @RequestBody CartAddRequestDto request) {
+        CartAddResponseDto response = cartService.addToCartWithRecs(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/total/complex")
+    public ResponseEntity<CartTotalResponse> getComplexTotal(@RequestParam Long userId) {
+        CartTotalResponse response = cartService.getComplexCartTotal(userId);
+        return ResponseEntity.ok(response);
     }
 }

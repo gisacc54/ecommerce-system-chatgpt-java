@@ -35,6 +35,14 @@ public class Review {
     @Column
     private LocalDateTime updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "order_id") // matches foreign key column in DB
+    private Order order;
+
+    // getters and setters
+    public Order getOrder() { return order; }
+    public void setOrder(Order order) { this.order = order; }
+
     public enum Status {
         PENDING, APPROVED, REJECTED
     }

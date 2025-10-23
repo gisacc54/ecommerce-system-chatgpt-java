@@ -34,6 +34,9 @@ public class Product {
     @Column
     private LocalDateTime updatedAt;
 
+    public BigDecimal getPriceTZS() {
+        return this.price; // map price to TZS
+    }
     public Long getId() {
         return id;
     }

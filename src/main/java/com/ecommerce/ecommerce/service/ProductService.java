@@ -172,7 +172,7 @@ public class ProductService {
                         r.getUser().getName(),
                         r.getRating(),
                         r.getComment(),
-                        r.getCreatedAt().format(DateTimeFormatter.ISO_DATE_TIME)
+                        r.getCreatedAt()
                 ))
                 .collect(Collectors.toList());
 

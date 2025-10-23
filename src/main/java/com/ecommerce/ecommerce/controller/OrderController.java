@@ -1,15 +1,12 @@
 package com.ecommerce.ecommerce.controller;
 
 import com.ecommerce.ecommerce.dto.*;
-import com.ecommerce.ecommerce.dto.CancelOrderResponse;
 import com.ecommerce.ecommerce.entity.User;
 import com.ecommerce.ecommerce.repository.UserRepository;
+import com.ecommerce.ecommerce.service.OrderCancellationService;
 import com.ecommerce.ecommerce.service.OrderService;
-import com.ecommerce.ecommerce.service.UserService;
-import jakarta.mail.MessagingException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.mail.MailException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -23,10 +20,12 @@ public class OrderController {
 
     private final OrderService orderService;
     private final UserRepository userRepository;
+    private final OrderCancellationService cancellationService;
 
-    public OrderController(OrderService orderService, UserRepository userRepository) {
+    public OrderController(OrderService orderService, UserRepository userRepository, OrderCancellationService cancellationService) {
         this.orderService = orderService;
         this.userRepository = userRepository;
+        this.cancellationService = cancellationService;
     }
 
     /**
@@ -126,5 +125,19 @@ public class OrderController {
         public String getMessage() {
             return message;
         }
+    }
+
+    /**
+     * Cancel an order with optional refund processing.
+     * authenticated user id can be injected using @AuthenticationPrincipal (Long userId)
+     */
+    @PutMapping("/{id}/cancel/with-refund")
+    public ResponseEntity<CancelOrderResponse> cancelOrderWithRefund(
+            @PathVariable("id") Long orderId,
+            @AuthenticationPrincipal Long userId // assumes your security returns Long userId
+    ) {
+        // pass the performing user's ID for audit trail (null if anonymous/system)
+        CancelOrderResponse response = cancellationService.cancelOrderWithRefund(orderId, userId);
+        return ResponseEntity.ok(response);
     }
 }

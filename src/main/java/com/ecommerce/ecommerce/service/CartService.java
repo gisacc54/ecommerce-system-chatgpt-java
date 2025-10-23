@@ -1,20 +1,15 @@
 package com.ecommerce.ecommerce.service;
 
-import com.ecommerce.ecommerce.dto.AddToCartRequest;
-import com.ecommerce.ecommerce.dto.CartTotalResponse;
-import com.ecommerce.ecommerce.entity.Cart;
-import com.ecommerce.ecommerce.entity.Coupon;
-import com.ecommerce.ecommerce.entity.Product;
-import com.ecommerce.ecommerce.entity.User;
-import com.ecommerce.ecommerce.repository.CartRepository;
-import com.ecommerce.ecommerce.repository.CouponRepository;
-import com.ecommerce.ecommerce.repository.ProductRepository;
-import com.ecommerce.ecommerce.repository.UserRepository;
+import com.ecommerce.ecommerce.dto.*;
+import com.ecommerce.ecommerce.entity.*;
+import com.ecommerce.ecommerce.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class CartService {
@@ -23,12 +18,16 @@ public class CartService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final CouponRepository couponRepository;
+    private final CartItemRepository cartItemRepository;
 
-    public CartService(CartRepository cartRepository, ProductRepository productRepository, UserRepository userRepository, CouponRepository couponRepository) {
+
+
+    public CartService(CartRepository cartRepository, ProductRepository productRepository, UserRepository userRepository, CouponRepository couponRepository, CartItemRepository cartItemRepository) {
         this.cartRepository = cartRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.couponRepository = couponRepository;
+        this.cartItemRepository = cartItemRepository;
     }
 
     @Transactional
@@ -149,5 +148,130 @@ public class CartService {
         cartRepository.deleteAll(userCartItems);
 
         return userCartItems.size();
+    }
+
+    @Transactional
+    public CartAddResponseDto addToCartWithRecs(CartAddRequestDto request) {
+
+        User user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        // Locking and updating or creating cart item
+        CartItem cartItem = cartItemRepository.findByUserAndProduct(user, product)
+                .orElseGet(() -> {
+                    CartItem newItem = new CartItem();
+                    newItem.setUser(user);
+                    newItem.setProduct(product);
+                    newItem.setQuantity(0);
+                    return newItem;
+                });
+
+        cartItem.setQuantity(cartItem.getQuantity() + request.getQuantity());
+        cartItemRepository.save(cartItem);
+
+        // Fetch updated cart items
+        List<CartItemDto> cartItems = cartItemRepository.findByUser(user)
+                .stream()
+                .map(item -> {
+                    CartItemDto dto = new CartItemDto();
+                    dto.setProductId(item.getProduct().getId());
+                    dto.setProductName(item.getProduct().getName());
+                    dto.setQuantity(item.getQuantity());
+                    dto.setPriceTZS(item.getProduct().getPriceTZS());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+
+        // Calculate total TZS
+        BigDecimal totalTZS = cartItems.stream()
+                .map(ci -> ci.getPriceTZS().multiply(BigDecimal.valueOf(ci.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Generate simple recommendations (based on other products)
+        List<CartItemDto> recommendedProducts = productRepository.findAll()
+                .stream()
+                .filter(p -> !cartItems.stream().anyMatch(ci -> ci.getProductId().equals(p.getId())))
+                .limit(5)
+                .map(p -> {
+                    CartItemDto dto = new CartItemDto();
+                    dto.setProductId(p.getId());
+                    dto.setProductName(p.getName());
+                    dto.setPriceTZS(p.getPriceTZS());
+                    dto.setQuantity(1);
+                    return dto;
+                })
+                .collect(Collectors.toList());
+
+        CartAddResponseDto response = new CartAddResponseDto();
+        response.setCartItems(cartItems);
+        response.setTotalTZS(totalTZS);
+        response.setRecommendedProducts(recommendedProducts);
+
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public CartTotalResponse getComplexCartTotal(Long userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<Cart> cartItems = cartRepository.findByUserId(userId);
+        CartTotalResponse response = new CartTotalResponse();
+
+        List<CartTotalResponse.CartItemDetail> itemDetails = new ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
+
+        // Fetch product prices and calculate subtotal
+        for (Cart item : cartItems) {
+            Product product = productRepository.findById(item.getProduct().getId())
+                    .orElseThrow(() -> new RuntimeException("Product not found: " + item.getProduct().getId()));
+
+            BigDecimal itemTotal = product.getPriceTZS().multiply(BigDecimal.valueOf(item.getQuantity()));
+            subtotal = subtotal.add(itemTotal);
+
+            CartTotalResponse.CartItemDetail detail = new CartTotalResponse.CartItemDetail();
+            detail.setProductId(product.getId());
+            detail.setProductName(product.getName());
+            detail.setPriceTZS(product.getPriceTZS());
+            detail.setQuantity(item.getQuantity());
+            detail.setTotalTZS(itemTotal);
+            itemDetails.add(detail);
+        }
+
+        // Apply discounts (e.g., from coupons or external promo API)
+        BigDecimal discount = calculateDiscount(userId, cartItems);
+
+        // Calculate taxes (region-based)
+        BigDecimal taxRate = user.getRegion().equalsIgnoreCase("Zanzibar") ? new BigDecimal("0.18") : new BigDecimal("0.15");
+        BigDecimal tax = subtotal.subtract(discount).multiply(taxRate).setScale(0, RoundingMode.HALF_UP);
+
+        // Fetch shipping cost
+        BigDecimal shipping = BigDecimal.valueOf(2000);
+
+        // Total
+        BigDecimal total = subtotal.subtract(discount).add(tax).add(shipping);
+
+        // Set response
+        response.setItems(itemDetails);
+        response.setSubtotalTZS(subtotal);
+        response.setDiscountTZS(discount);
+        response.setTaxTZS(tax);
+        response.setShippingTZS(shipping);
+        response.setTotalTZS(total);
+
+        return response;
+    }
+
+    private BigDecimal calculateDiscount(Long userId, List<Cart> cartItems) {
+        // Example: 5% off for promotional purposes
+        BigDecimal subtotal = cartItems.stream()
+                .map(ci -> ci.getProduct().getPriceTZS().multiply(BigDecimal.valueOf(ci.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return subtotal.multiply(new BigDecimal("0.05")).setScale(0, RoundingMode.HALF_UP);
     }
 }

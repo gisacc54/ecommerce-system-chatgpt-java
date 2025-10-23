@@ -1,7 +1,6 @@
 package com.ecommerce.ecommerce.service;
 
 import com.ecommerce.ecommerce.dto.*;
-import com.ecommerce.ecommerce.dto.CancelOrderResponse;
 import com.ecommerce.ecommerce.entity.*;
 import com.ecommerce.ecommerce.repository.*;
 import jakarta.mail.MessagingException;
@@ -146,7 +145,6 @@ public class OrderService {
         CancelOrderResponse response = new CancelOrderResponse();
         response.setOrderId(orderId);
         response.setStatus("cancelled");
-        response.setRefundProcessed(refundProcessed);
 
         return response;
     }
@@ -232,7 +230,9 @@ public class OrderService {
 
     private OrderItemDto mapToDto(OrderItem oi) {
         return new OrderItemDto(
-                oi.getProduct().getName(), // or oi.getProduct().getName() depending on your model
+                oi.getId(),                 // orderItem ID
+                oi.getProduct().getId(),    // product ID
+                oi.getProduct().getName(),  // product name
                 oi.getQuantity(),
                 oi.getPrice()
         );
@@ -250,10 +250,11 @@ public class OrderService {
         sb.append("<thead><tr><th style='border:1px solid #ddd; padding:8px'>Product</th><th style='border:1px solid #ddd; padding:8px'>Qty</th><th style='border:1px solid #ddd; padding:8px'>Price (TZS)</th></tr></thead>");
         sb.append("<tbody>");
         for (OrderItemDto it : items) {
+            BigDecimal total = it.getUnitPrice().multiply(BigDecimal.valueOf(it.getQuantity()));
             sb.append("<tr>");
-            sb.append("<td style='border:1px solid #ddd; padding:8px'>").append(it.productName()).append("</td>");
-            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:center'>").append(it.quantity()).append("</td>");
-            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:right'>").append(formatTzs(it.price())).append("</td>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px'>").append(it.getProductName()).append("</td>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:center'>").append(it.getQuantity()).append("</td>");
+            sb.append("<td style='border:1px solid #ddd; padding:8px; text-align:right'>").append(formatTzs(total)).append("</td>");
             sb.append("</tr>");
         }
         sb.append("</tbody></table>");
