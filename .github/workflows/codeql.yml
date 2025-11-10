@@ -1,0 +1,57 @@
+name: "CodeQL Java Analysis"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 1 * * 0'  # Weekly scan (Sunday 1AM)
+
+jobs:
+  analyze:
+    name: Analyze Java with CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'java-kotlin' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Set up Java (Java 17 recommended for Spring Boot 3.x)
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    # Initialize CodeQL
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: ${{ matrix.language }}
+        build-mode: autobuild
+        queries: security-extended,security-and-quality
+
+    # Build the project
+    - name: Build with Maven (if you use Maven)
+      if: hashFiles('**/pom.xml') != ''
+      run: mvn clean install -DskipTests
+
+    - name: Build with Gradle (if you use Gradle)
+      if: hashFiles('**/build.gradle*') != ''
+      run: ./gradlew build -x test
+
+    # Analyze the code
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
+      with:
+        category: "/language:${{matrix.language}}"
