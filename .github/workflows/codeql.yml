@@ -46,10 +46,6 @@ jobs:
       if: hashFiles('**/pom.xml') != ''
       run: mvn clean install -DskipTests
 
-    - name: Build with Gradle (if you use Gradle)
-      if: hashFiles('**/build.gradle*') != ''
-      run: ./gradlew build -x test
-
     # Analyze the code
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
